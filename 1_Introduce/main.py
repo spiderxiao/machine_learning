@@ -72,7 +72,6 @@ def plot_pred(dv_set, model, device, lim=35., preds=None, targets=None):
     plt.title('Ground Truth v.s. Prediction')
     plt.show()
 
-#在这上面的都不用修改
 
 
 
@@ -82,7 +81,8 @@ class COVID19Dataset(Dataset):
     def __init__(self,
                  path,
                  mode='train',
-                 target_only=True):
+                 target_only=True,
+                 stats=None):
         self.mode = mode
 
         # Read data into numpy arrays
@@ -119,12 +119,30 @@ class COVID19Dataset(Dataset):
             self.data = torch.FloatTensor(data[indices])
             self.target = torch.FloatTensor(target[indices])
 
-        # Normalize features (you may remove this part to see what will happen)
-        
-        self.data[:, 40:] = \
-            (self.data[:, 40:] - self.data[:, 40:].mean(dim=0, keepdim=True)) \
-            / self.data[:, 40:].std(dim=0, keepdim=True)
+            #归一化前
+            print(
+                f"\n[{self.mode}] 归一化前 - 均值: {self.data.mean().item():.4f}, 标准差: {self.data.std().item():.4f}")
+            print(f"[{self.mode}] 样本第一行数据: {self.data[0]}")
 
+
+        # Normalize features (you may remove this part to see what will happen)
+        if stats is None:
+            self.mean = self.data.mean(dim=0, keepdim=True)
+            self.std = self.data.std(dim=0, keepdim=True)
+        else:
+            self.mean = stats['mean']
+            self.std = stats['std']
+
+        self.data = (self.data - self.mean) / (self.std)
+
+        #test也用test  数据泄露，学习出错
+        # self.data[:, 40:] = \
+        #     (self.data[:, 40:] - self.data[:, 40:].mean(dim=0, keepdim=True)) \
+        #     / self.data[:, 40:].std(dim=0, keepdim=True)
+
+        #归一化后
+        print(f"[{self.mode}] 归一化后 - 均值: {self.data.mean().item():.4f}, 标准差: {self.data.std().item():.4f}")
+        print(f"[{self.mode}] 样本第一行归一化后: {self.data[0]}\n")
 
         self.dim = self.data.shape[1]
 
@@ -277,9 +295,22 @@ config = {
 }
 
 
-tr_set = prep_dataloader(tr_path, 'train', config['batch_size'], target_only=target_only)
-dv_set = prep_dataloader(tr_path, 'dev', config['batch_size'], target_only=target_only)
-tt_set = prep_dataloader(tt_path, 'test', config['batch_size'], target_only=target_only)
+
+tr_dataset = COVID19Dataset(tr_path, mode='train', target_only=True)
+train_stats = {'mean': tr_dataset.mean, 'std': tr_dataset.std}
+
+dv_dataset = COVID19Dataset(tr_path, mode='dev', target_only=True, stats=train_stats)
+tt_dataset = COVID19Dataset(tt_path, mode='test', target_only=True, stats=train_stats)
+
+
+tr_set = DataLoader(tr_dataset, batch_size=config['batch_size'], shuffle=True)
+dv_set = DataLoader(dv_dataset, batch_size=config['batch_size'], shuffle=False)
+tt_set = DataLoader(tt_dataset, batch_size=config['batch_size'], shuffle=False)
+
+
+# tr_set = prep_dataloader(tr_path, 'train', config['batch_size'], target_only=target_only)
+# dv_set = prep_dataloader(tr_path, 'dev', config['batch_size'], target_only=target_only)
+# tt_set = prep_dataloader(tt_path, 'test', config['batch_size'], target_only=target_only)
 
 
 model = NeuralNet(tr_set.dataset.dim).to(device)  # Construct model and move to device
